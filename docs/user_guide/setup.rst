@@ -4,7 +4,7 @@ Setup
 Prerequisites
 -------------
 
-Errbot runs under Python 3.3+ on Linux, Windows and Mac.
+Errbot runs under Python 3.6+ on Linux, Windows and Mac.
 
 Installation
 ------------
@@ -18,10 +18,10 @@ that the version packaged with your distribution may be a few versions behind.
 
 Example of packaged versions of Errbot:
 
-Gentoo: https://gpo.zugaina.org/net-im/errbot
-Arch: https://aur.archlinux.org/packages/python-err/
-Docker: https://hub.docker.com/r/rroemhild/errbot/
-Juju: https://jujucharms.com/u/onlineservices-charmers/errbot
+* Gentoo: https://gpo.zugaina.org/net-im/errbot
+* Arch: https://aur.archlinux.org/packages/python-err/
+* Docker: https://hub.docker.com/r/rroemhild/errbot/
+* Juju: https://jujucharms.com/u/onlineservices-charmers/errbot
 
 
 Option 2: Installing Errbot in a virtualenv (preferred)
@@ -81,7 +81,7 @@ This will create a minimally working errbot in text (development) mode. You can 
 Configuration
 -------------
 
-Once you have installed errbot and did `errbot --init`, you will have to tweak the generated `config.py` to connect
+Once you have installed errbot and did :code:`errbot --init`, you will have to tweak the generated `config.py` to connect
 to your desired chat network.
 
 You can use :download:`config-template.py` as a base for your `config.py`.
@@ -96,7 +96,7 @@ This is the directory where the bot will store configuration data.
 The first setting to check or change `BOT_LOG_FILE` to be sure it point to a writeable directory on your system.
 
 The final configuration we absolutely must do is setting up a correct `BACKEND` which is set to `Text` by
-`errbot --init` but you can change to the name of the chat system you want to connect to (see the template above
+:code:`errbot --init` but you can change to the name of the chat system you want to connect to (see the template above
 for valid values).
 
 You absolutely need a `BOT_IDENTITY` entry to set the credentials Errbot will use to connect to the chat system.
@@ -108,7 +108,6 @@ You can find here more details about configuring Errbot for some specific chat s
 
   configuration/xmpp
   configuration/irc
-  configuration/hipchat
   configuration/slack
   configuration/telegram
 
@@ -139,7 +138,7 @@ you can now use the -d (or --daemon) parameter to run it in a detached mode::
 
 If you are going to run your bot all the time then using some process control system
 such as `supervisor`_ is highly recommended. Installing and configuring such a system
-is outside the scope of this document however.
+is outside the scope of this document, however, we do provide some sample daemon configurations below.
 
 .. note::
     There are two ways to gracefully shut down a running bot.
@@ -162,6 +161,14 @@ These are a few example configurations using common init daemons:
 
 .. literalinclude:: ../code_examples/systemd.service
     :language: sh
+
+.. note::
+
+    Running errbot within a daemon process can have security implications if the daemon is started with an account containing elevated privileges.
+    We encourage errbot **not** be run under a `root` or `administrator` account but under a non-privileged account. The command below creates a non-privileged `errbot` account on Linux::
+
+        $ useradd --no-create-home --no-user-group -g nogroup -s /bin/false errbot
+
 
 Upgrading
 ---------

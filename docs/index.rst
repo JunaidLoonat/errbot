@@ -4,12 +4,12 @@ Errbot
 *Errbot is a chatbot, a daemon that connects to your favorite chat service and brings
 your tools into the conversation.*
 
-The goal of the project is to make it easy for you to write your own plugins so you 
+The goal of the project is to make it easy for you to write your own plugins so you
 can make it do whatever you want: a deployment, retrieving some information online,
 trigger a tool via an API, troll a co-worker,...
 
 Errbot is being used in a lot of different contexts: chatops (tools for devops),
-online gaming chatrooms like EVE, video streaming chatrooms like `livecoding.tv <http://livecoding.tv>`_, 
+online gaming chatrooms like EVE, video streaming chatrooms like `livecoding.tv <http://livecoding.tv>`_,
 home security, etc.
 
 Screenshots
@@ -18,14 +18,11 @@ Screenshots
 .. raw:: html
 
     <div class="screenshots">
-        <a href="_static/screenshots/help.png" class="fancybox" title="Showing output of the built-in help command">
-            <img src="_static/screenshots/thumb_help.png" width="155" height="150" alt="Showing output of the built-in help command" />
+        <a href="_static/screenshots/slack.png" class="fancybox" title="Showing output of the built-in help command in Slack">
+            <img src="_static/screenshots/thumb_slack.png" width="170" height="150" alt="Showing output of the built-in help command in Slack" />
         </a>
-        <a href="_static/screenshots/quota.png" class="fancybox" title="Errbot running on HipChat, showing off a (businesss-specific) command to get and set the disk quotas for mail accounts">
-            <img src="_static/screenshots/thumb_quota.png" width="268" height= "150" alt="Errbot running on HipChat, showing off a (businesss-specific) command to get and set the disk quotas for mail accounts" />
-        </a>
-        <a href="_static/screenshots/basecamp.png" class="fancybox" title="An older version of Errbot, running on Basecamp">
-            <img src="_static/screenshots/thumb_basecamp.png" width="181" height= "150" alt="An older version of Err, running on Basecamp" />
+        <a href="_static/screenshots/telegram.png" class="fancybox" title="Errbot running on Telegram showing the !help command">
+            <img src="_static/screenshots/thumb_telegram.png" width="180" height= "150" alt="Errbot running on Telegram showing the !help command" />
         </a>
     </div>
 
@@ -33,7 +30,7 @@ Simple to build upon
 --------------------
 
 Extending Errbot and adding your own commands can be done by creating a plugin, which
-is simply a class derived from :class:`~errbot.botplugin.BotPlugin`. 
+is simply a class derived from :class:`~errbot.botplugin.BotPlugin`.
 The docstrings will be automatically reused by the :ref:`\!help <builtin_help_function>`
 command::
 
@@ -78,13 +75,8 @@ You may also discover plugins from the community on our `plugin list`_ that we u
 Community
 ---------
 
-Errbot has a `Google plus community`_, which is the best place to discuss anything
-related to Errbot as well as promote your own creations !
-This is also the place where you will find announcements of new versions and other
-news related to the project.
-
-You can also interact directly with the community online from the "Open Chat"
-button at the bottom of this page. Don't be shy and feel free to ask any question 
+You can interact directly with the community online from the "Open Chat"
+button at the bottom of this page. Don't be shy and feel free to ask any question
 there, we are more than happy to help you.
 
 If you think you hit a bug or the documentation is not clear enough,

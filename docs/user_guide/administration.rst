@@ -125,6 +125,11 @@ Some commands are hardcoded to be admin-only so the people listed here will be g
 More advanced access controls can be set up using the `ACCESS_CONTROLS` and `ACCESS_CONTROLS_DEFAULT` options which allow you to set up sophisticated rules.
 The example :download:`config.py <config-template.py>` file contains more information about the format of these options.
 
+If you don't like encoding access controls into the config file, a member
+of the errbot community has also created a `dynamic ACL module
+<https://github.com/shengis/err-profiles>`_ which can be administered
+through chat commands instead.
+
 .. note::
     Different backends have different formats to identify users.
     Refer to the backend-specific notes at the end of the :ref:`configuration <configuration>` chapter to see which format you should use.
@@ -142,3 +147,10 @@ so they can serve as a good :mod:`example <errbot.core_plugins.acls>` (be sure t
 You can add command filters to your bot by including them as part of any regular errbot plugin,
 it will find and register them automatically when your plugin is loaded.
 Any method in your plugin which is decorated by :func:`~errbot.cmdfilter` will then act as a command filter.
+
+
+Overriding CommandNotFoundFilter
+--------------------------------
+
+In some cases, it may be necessary to run other filters before the `CommandNotFoundFilter`.  Since the `CommandNotFoundFilter` is part of the core plugin list loaded by errbot, it can not be directly overridden from another plugin.
+Instead, to prevent `CommandNotFoundFilter` from being called before other filters, exclude the `CommandNotFoundFilter` plugin in the `CORE_PLUGINS` setting in `config.py` and explicitly call the `CommandNotFoundFilter` function from the overriding filter.

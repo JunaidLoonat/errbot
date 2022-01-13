@@ -1,93 +1,102 @@
 from __future__ import absolute_import
+
 import logging
+import re
+import struct
+import subprocess
 import sys
 import threading
-import subprocess
-import struct
-import re
+from typing import Any, BinaryIO, List, Optional, Union
 
 from markdown import Markdown
 from markdown.extensions.extra import ExtraExtension
 
-from errbot.backends.base import Message, Room, RoomError, \
-    RoomNotJoinedError, Stream, \
-    RoomOccupant, ONLINE, Person
+from errbot.backends.base import (
+    ONLINE,
+    Identifier,
+    Message,
+    Person,
+    Room,
+    RoomError,
+    RoomNotJoinedError,
+    RoomOccupant,
+    Stream,
+)
 from errbot.core import ErrBot
+from errbot.rendering.ansiext import NSC, AnsiExtension, CharacterTable, enable_format
 from errbot.utils import rate_limited
-from errbot.rendering.ansiext import AnsiExtension, enable_format, \
-    CharacterTable, NSC
 
+log = logging.getLogger(__name__)
 
-# Can't use __name__ because of Yapsy
-log = logging.getLogger('errbot.backends.irc')
+IRC_CHRS = CharacterTable(
+    fg_black=NSC("\x0301"),
+    fg_red=NSC("\x0304"),
+    fg_green=NSC("\x0303"),
+    fg_yellow=NSC("\x0308"),
+    fg_blue=NSC("\x0302"),
+    fg_magenta=NSC("\x0306"),
+    fg_cyan=NSC("\x0310"),
+    fg_white=NSC("\x0300"),
+    fg_default=NSC("\x03"),
+    bg_black=NSC("\x03,01"),
+    bg_red=NSC("\x03,04"),
+    bg_green=NSC("\x03,03"),
+    bg_yellow=NSC("\x03,08"),
+    bg_blue=NSC("\x03,02"),
+    bg_magenta=NSC("\x03,06"),
+    bg_cyan=NSC("\x03,10"),
+    bg_white=NSC("\x03,00"),
+    bg_default=NSC("\x03,"),
+    fx_reset=NSC("\x03"),
+    fx_bold=NSC("\x02"),
+    fx_italic=NSC("\x1D"),
+    fx_underline=NSC("\x1F"),
+    fx_not_italic=NSC("\x0F"),
+    fx_not_underline=NSC("\x0F"),
+    fx_normal=NSC("\x0F"),
+    fixed_width="",
+    end_fixed_width="",
+    inline_code="",
+    end_inline_code="",
+)
 
-IRC_CHRS = CharacterTable(fg_black=NSC('\x0301'),
-                          fg_red=NSC('\x0304'),
-                          fg_green=NSC('\x0303'),
-                          fg_yellow=NSC('\x0308'),
-                          fg_blue=NSC('\x0302'),
-                          fg_magenta=NSC('\x0306'),
-                          fg_cyan=NSC('\x0310'),
-                          fg_white=NSC('\x0300'),
-                          fg_default=NSC('\x03'),
-                          bg_black=NSC('\x03,01'),
-                          bg_red=NSC('\x03,04'),
-                          bg_green=NSC('\x03,03'),
-                          bg_yellow=NSC('\x03,08'),
-                          bg_blue=NSC('\x03,02'),
-                          bg_magenta=NSC('\x03,06'),
-                          bg_cyan=NSC('\x03,10'),
-                          bg_white=NSC('\x03,00'),
-                          bg_default=NSC('\x03,'),
-                          fx_reset=NSC('\x03'),
-                          fx_bold=NSC('\x02'),
-                          fx_italic=NSC('\x1D'),
-                          fx_underline=NSC('\x1F'),
-                          fx_not_italic=NSC('\x0F'),
-                          fx_not_underline=NSC('\x0F'),
-                          fx_normal=NSC('\x0F'),
-                          fixed_width='',
-                          end_fixed_width='',
-                          inline_code='',
-                          end_inline_code='')
-
-IRC_NICK_REGEX = r'[a-zA-Z\[\]\\`_\^\{\|\}][a-zA-Z0-9\[\]\\`_\^\{\|\}-]+'
-IRC_MESSAGE_SIZE_LIMIT = 510
+IRC_NICK_REGEX = r"[a-zA-Z\[\]\\`_\^\{\|\}][a-zA-Z0-9\[\]\\`_\^\{\|\}-]+"
 
 try:
     import irc.connection
-    from irc.client import ServerNotConnectedError, NickMask
     from irc.bot import SingleServerIRCBot
+    from irc.client import NickMask, ServerNotConnectedError
 except ImportError:
-    log.fatal("""You need the IRC support to use IRC, you can install it with:
+    log.fatal(
+        """You need the IRC support to use IRC, you can install it with:
     pip install errbot[IRC]
-    """)
+    """
+    )
     sys.exit(-1)
 
 
-def irc_md():
-    """This makes a converter from markdown to mirc color format.
-    """
-    md = Markdown(output_format='irc', extensions=[ExtraExtension(), AnsiExtension()])
+def irc_md() -> Markdown:
+    """This makes a converter from markdown to mirc color format."""
+    md = Markdown(output_format="irc", extensions=[ExtraExtension(), AnsiExtension()])
     md.stripTopLevelTags = False
     return md
 
 
 class IRCPerson(Person):
-
     def __init__(self, mask):
         self._nickmask = NickMask(mask)
+        self._email = ""
 
     @property
-    def nick(self):
+    def nick(self) -> str:
         return self._nickmask.nick
 
     @property
-    def user(self):
+    def user(self) -> str:
         return self._nickmask.user
 
     @property
-    def host(self):
+    def host(self) -> str:
         return self._nickmask.host
 
     # generic compatibility
@@ -98,15 +107,19 @@ class IRCPerson(Person):
         return self._nickmask.userhost
 
     @property
-    def fullname(self):
+    def fullname(self) -> None:
         # TODO: this should be possible to get
         return None
 
     @property
+    def email(self) -> str:
+        return self._email
+
+    @property
     def aclattr(self):
-        return IRCBackend.aclpattern.format(nick=self._nickmask.nick,
-                                            user=self._nickmask.user,
-                                            host=self._nickmask.host)
+        return IRCBackend.aclpattern.format(
+            nick=self._nickmask.nick, user=self._nickmask.user, host=self._nickmask.host
+        )
 
     def __unicode__(self):
         return str(self._nickmask)
@@ -122,36 +135,35 @@ class IRCPerson(Person):
 
 
 class IRCRoomOccupant(IRCPerson, RoomOccupant):
-
     def __init__(self, mask, room):
         super().__init__(mask)
         self._room = room
 
     @property
-    def room(self):
+    def room(self) -> Room:
         return self._room
 
     def __unicode__(self):
-        return "%s" % self._nickmask
+        return self._nickmask
 
     def __str__(self):
         return self.__unicode__()
 
     def __repr__(self):
-        return "<{} - {}>".format(self.__unicode__(), super().__repr__())
+        return f"<{self.__unicode__()} - {super().__repr__()}>"
 
 
 class IRCRoom(Room):
     """
-        Represent the specifics of a IRC Room/Channel.
+    Represent the specifics of a IRC Room/Channel.
 
-        This lifecycle of this object is:
-         - Created in IRCConnection.on_join
-         - The joined status change in IRCConnection on_join/on_part
-         - Deleted/destroyed in IRCConnection.on_disconnect
+    This lifecycle of this object is:
+     - Created in IRCConnection.on_join
+     - The joined status change in IRCConnection on_join/on_part
+     - Deleted/destroyed in IRCConnection.on_disconnect
     """
 
-    def __init__(self, room, bot):
+    def __init__(self, room: Room, bot):
         self._bot = bot
         self.room = room
         self.connection = self._bot.conn.connection
@@ -165,9 +177,9 @@ class IRCRoom(Room):
         return self.__unicode__()
 
     def __repr__(self):
-        return "<{} - {}>".format(self.__unicode__(), super().__repr__())
+        return f"<{self.__unicode__()} - {super().__repr__()}>"
 
-    def cb_set_topic(self, current_topic):
+    def cb_set_topic(self, current_topic: str) -> None:
         """
         Store the current topic for this room.
 
@@ -180,7 +192,7 @@ class IRCRoom(Room):
         with self._topic_lock:
             self._topic = current_topic
 
-    def join(self, username=None, password=None):
+    def join(self, username: Any = None, password: Optional[str] = None) -> None:
         """
         Join the room.
 
@@ -188,14 +200,17 @@ class IRCRoom(Room):
         :meth:`create` on it first.
         """
         if username is not None:
-            log.debug("Ignored username parameter on join(), it is unsupported on this back-end.")
+            log.debug(
+                "Ignored username parameter on join(), it is unsupported on this back-end."
+            )
         if password is None:
             password = ""  # nosec
 
         self.connection.join(self.room, key=password)
-        log.info("Joined room {}".format(self.room))
+        self._bot.callback_room_joined(self, self._bot.bot_identifier)
+        log.info("Joined room %s.", self.room)
 
-    def leave(self, reason=None):
+    def leave(self, reason: Optional[str] = None) -> None:
         """
         Leave the room.
 
@@ -206,26 +221,30 @@ class IRCRoom(Room):
             reason = ""
 
         self.connection.part(self.room, reason)
-        log.info("Leaving room {} with reason '{}'".format(self.room, reason if reason is not None else ''))
+        self._bot.callback_room_left(self, self._bot.bot_identifier)
+        log.info(
+            "Leaving room %s with reason %s.",
+            self.room,
+            reason if reason is not None else "",
+        )
 
-    def create(self):
+    def create(self) -> None:
         """
         Not supported on this back-end. Will join the room to ensure it exists, instead.
         """
         logging.warning(
-            "IRC back-end does not support explicit creation, joining room "
-            "instead to ensure it exists."
+            "IRC back-end does not support explicit creation, joining room instead to ensure it exists."
         )
         self.join()
 
-    def destroy(self):
+    def destroy(self) -> None:
         """
         Not supported on IRC, will raise :class:`~errbot.backends.base.RoomError`.
         """
         raise RoomError("IRC back-end does not support destroying rooms.")
 
     @property
-    def exists(self):
+    def exists(self) -> bool:
         """
         Boolean indicating whether this room already exists or not.
 
@@ -239,7 +258,7 @@ class IRCRoom(Room):
         return self.joined
 
     @property
-    def joined(self):
+    def joined(self) -> bool:
         """
         Boolean indicating whether this room has already been joined.
 
@@ -249,7 +268,7 @@ class IRCRoom(Room):
         return self.room in self._bot.conn.channels.keys()
 
     @property
-    def topic(self):
+    def topic(self) -> Optional[str]:
         """
         The room topic.
 
@@ -258,12 +277,12 @@ class IRCRoom(Room):
             topic has been set at all.
         """
         if not self.joined:
-            raise RoomNotJoinedError("Must join the room to get the topic")
+            raise RoomNotJoinedError("Must join the room to get the topic.")
         with self._topic_lock:
             return self._topic
 
     @topic.setter
-    def topic(self, topic):
+    def topic(self, topic: str):
         """
         Set the room's topic.
 
@@ -271,11 +290,11 @@ class IRCRoom(Room):
             The topic to set.
         """
         if not self.joined:
-            raise RoomNotJoinedError("Must join the room to set the topic")
+            raise RoomNotJoinedError("Must join the room to set the topic.")
         self.connection.topic(self.room, topic)
 
     @property
-    def occupants(self):
+    def occupants(self) -> List[IRCRoomOccupant]:
         """
         The room's occupants.
 
@@ -289,11 +308,10 @@ class IRCRoom(Room):
             for nick in self._bot.conn.channels[self.room].users():
                 occupants.append(IRCRoomOccupant(nick, room=self.room))
         except KeyError:
-            raise RoomNotJoinedError("Must be in a room in order to \
-                                     see occupants.")
+            raise RoomNotJoinedError("Must be in a room in order to see occupants.")
         return occupants
 
-    def invite(self, *args):
+    def invite(self, *args) -> None:
         """
         Invite one or more people into the room.
 
@@ -302,42 +320,49 @@ class IRCRoom(Room):
         """
         for nick in args:
             self.connection.invite(nick, self.room)
-            log.info("Invited {} to {}".format(nick, self.room))
+            log.info("Invited %s to %s.", nick, self.room)
 
     def __eq__(self, other):
         if not isinstance(other, IRCRoom):
-            log.warning("This is weird you are comparing an IRCRoom to a %s", type(other))
+            log.warning(
+                "This is weird you are comparing an IRCRoom to a %s.", type(other)
+            )
             return False
         return self.room == other.room
 
 
 class IRCConnection(SingleServerIRCBot):
-
-    def __init__(self,
-                 bot,
-                 nickname,
-                 server,
-                 port=6667,
-                 ssl=False,
-                 bind_address=None,
-                 ipv6=False,
-                 password=None,
-                 username=None,
-                 nickserv_password=None,
-                 private_rate=1,
-                 channel_rate=1,
-                 reconnect_on_kick=5,
-                 reconnect_on_disconnect=5):
+    def __init__(
+        self,
+        bot,
+        nickname,
+        server,
+        port=6667,
+        ssl=False,
+        bind_address=None,
+        ipv6=False,
+        password=None,
+        username=None,
+        nickserv_password=None,
+        private_rate=1,
+        channel_rate=1,
+        reconnect_on_kick=5,
+        reconnect_on_disconnect=5,
+    ):
         self.use_ssl = ssl
         self.use_ipv6 = ipv6
         self.bind_address = bind_address
         self.bot = bot
         # manually decorate functions
         if private_rate:
-            self.send_private_message = rate_limited(private_rate)(self.send_private_message)
+            self.send_private_message = rate_limited(private_rate)(
+                self.send_private_message
+            )
 
         if channel_rate:
-            self.send_public_message = rate_limited(channel_rate)(self.send_public_message)
+            self.send_public_message = rate_limited(channel_rate)(
+                self.send_public_message
+            )
         self._reconnect_on_kick = reconnect_on_kick
         self._pending_transfers = {}
         self._rooms_lock = threading.Lock()
@@ -348,47 +373,53 @@ class IRCConnection(SingleServerIRCBot):
         if username is None:
             username = nickname
         self.transfers = {}
-        super().__init__([(server, port, password)], nickname, username, reconnection_interval=reconnect_on_disconnect)
+        super().__init__(
+            [(server, port, password)],
+            nickname,
+            username,
+            reconnection_interval=reconnect_on_disconnect,
+        )
 
-    def connect(self, *args, **kwargs):
+    def connect(self, *args, **kwargs) -> None:
         # Decode all input to UTF-8, but use a replacement character for
         # unrecognized byte sequences
         # (as described at https://pypi.python.org/pypi/irc)
-        self.connection.buffer_class.errors = 'replace'
+        self.connection.buffer_class.errors = "replace"
 
         connection_factory_kwargs = {}
         if self.use_ssl:
             import ssl
-            connection_factory_kwargs['wrapper'] = ssl.wrap_socket
+
+            connection_factory_kwargs["wrapper"] = ssl.wrap_socket
         if self.bind_address is not None:
-            connection_factory_kwargs['bind_address'] = self.bind_address
+            connection_factory_kwargs["bind_address"] = self.bind_address
         if self.use_ipv6:
-            connection_factory_kwargs['ipv6'] = True
+            connection_factory_kwargs["ipv6"] = True
 
         connection_factory = irc.connection.Factory(**connection_factory_kwargs)
         self.connection.connect(*args, connect_factory=connection_factory, **kwargs)
 
-    def on_welcome(self, _, e):
-        log.info("IRC welcome %s" % e)
+    def on_welcome(self, _, e) -> None:
+        log.info("IRC welcome %s", e)
 
         # try to identify with NickServ if there is a NickServ password in the
         # config
         if self.nickserv_password:
-            msg = 'identify %s' % self.nickserv_password
-            self.send_private_message('NickServ', msg)
+            msg = f"identify {self.nickserv_password}"
+            self.send_private_message("NickServ", msg)
 
         # Must be done in a background thread, otherwise the join room
         # from the ChatRoom plugin joining channels from CHATROOM_PRESENCE
         # ends up blocking on connect.
         t = threading.Thread(target=self.bot.connect_callback)
-        t.setDaemon(True)
+        t.daemon = True
         t.start()
 
-    def _pubmsg(self, e, notice=False):
-        msg = Message(e.arguments[0], extras={'notice': notice})
+    def _pubmsg(self, e, notice: bool = False) -> None:
+        msg = Message(e.arguments[0], extras={"notice": notice})
         room_name = e.target
-        if room_name[0] != '#' and room_name[0] != '$':
-            raise Exception('[%s] is not a room' % room_name)
+        if room_name[0] != "#" and room_name[0] != "$":
+            raise Exception(f"[{room_name}] is not a room")
         room = IRCRoom(room_name, self.bot)
         msg.frm = IRCRoomOccupant(e.source, room)
         msg.to = room
@@ -402,63 +433,84 @@ class IRCConnection(SingleServerIRCBot):
             mentions = [self.bot.build_identifier(mention) for mention in mentions]
             self.bot.callback_mention(msg, mentions)
 
-    def _privmsg(self, e, notice=False):
-        msg = Message(e.arguments[0], extras={'notice': notice})
+    def _privmsg(self, e, notice: bool = False) -> None:
+        msg = Message(e.arguments[0], extras={"notice": notice})
         msg.frm = IRCPerson(e.source)
         msg.to = IRCPerson(e.target)
         self.bot.callback_message(msg)
 
-    def on_pubmsg(self, _, e):
+    def on_pubmsg(self, _, e) -> None:
         self._pubmsg(e)
 
-    def on_privmsg(self, _, e):
+    def on_privmsg(self, _, e) -> None:
         self._privmsg(e)
 
-    def on_pubnotice(self, _, e):
+    def on_pubnotice(self, _, e) -> None:
         self._pubmsg(e, True)
 
-    def on_privnotice(self, _, e):
+    def on_privnotice(self, _, e) -> None:
         self._privmsg(e, True)
 
-    def on_kick(self, _, e):
+    def on_kick(self, _, e) -> None:
         if not self._reconnect_on_kick:
             log.info("RECONNECT_ON_KICK is 0 or None, won't try to reconnect")
             return
-        log.info("Got kicked out of %s... reconnect in %d seconds... " % (e.target, self._reconnect_on_kick))
+        log.info(
+            "Got kicked out of %s... reconnect in %d seconds... ",
+            e.target,
+            self._reconnect_on_kick,
+        )
 
         def reconnect_channel(name):
-            log.info("Reconnecting to %s after having beeing kicked" % name)
+            log.info("Reconnecting to %s after having beeing kicked.", name)
             self.bot.query_room(name).join()
-        t = threading.Timer(self._reconnect_on_kick, reconnect_channel, [e.target, ])
+
+        t = threading.Timer(
+            self._reconnect_on_kick,
+            reconnect_channel,
+            [
+                e.target,
+            ],
+        )
         t.daemon = True
         t.start()
 
-    def send_private_message(self, to, line):
+    def send_private_message(self, to, line: str) -> None:
         try:
             self.connection.privmsg(to, line)
         except ServerNotConnectedError:
             pass  # the message will be lost
 
-    def send_public_message(self, to, line):
+    def send_public_message(self, to, line: str) -> None:
         try:
             self.connection.privmsg(to, line)
         except ServerNotConnectedError:
             pass  # the message will be lost
 
-    def on_disconnect(self, connection, event):
+    def on_disconnect(self, connection, event) -> None:
         self._rooms = {}
         self.bot.disconnect_callback()
 
-    def send_stream_request(self, identifier, fsource, name=None, size=None, stream_type=None):
+    def send_stream_request(
+        self,
+        identifier: Identifier,
+        fsource: BinaryIO,
+        name: Optional[str] = None,
+        size: Optional[int] = None,
+        stream_type: Optional[str] = None,
+    ) -> Stream:
         # Creates a new connection
         dcc = self.dcc_listen("raw")
-        msg_parts = map(str, (
-            'SEND',
-            name,
-            irc.client.ip_quad_to_numstr(dcc.localaddress),
-            dcc.localport,
-            size,
-        ))
+        msg_parts = map(
+            str,
+            (
+                "SEND",
+                name,
+                irc.client.ip_quad_to_numstr(dcc.localaddress),
+                dcc.localport,
+                size,
+            ),
+        )
         msg = subprocess.list2cmdline(msg_parts)
         self.connection.ctcp("DCC", identifier.nick, msg)
         stream = Stream(identifier, fsource, name, size, stream_type)
@@ -466,55 +518,59 @@ class IRCConnection(SingleServerIRCBot):
 
         return stream
 
-    def on_dcc_connect(self, dcc, event):
+    def on_dcc_connect(self, dcc, event) -> None:
         stream = self.transfers.get(dcc, None)
         if stream is None:
             log.error("DCC connect on a none registered connection")
             return
-        log.debug("Start transfer for %s" % stream.identifier)
+        log.debug("Start transfer for %s.", stream.identifier)
         stream.accept()
         self.send_chunk(stream, dcc)
 
     def on_dcc_disconnect(self, dcc, event):
         self.transfers.pop(dcc)
 
-    def on_part(self, connection, event):
+    def on_part(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            Handler of the part IRC Message/event.
+        Handler of the part IRC Message/event.
 
-            The part message is sent to the client as a confirmation of a
-            /PART command sent by someone in the room/channel.
-            If the event.source contains the bot nickname then we need to fire
-            the :meth:`~errbot.backends.base.Backend.callback_room_left` event on the bot.
+        The part message is sent to the client as a confirmation of a
+        /PART command sent by someone in the room/channel.
+        If the event.source contains the bot nickname then we need to fire
+        the :meth:`~errbot.backends.base.Backend.callback_room_left` event on the bot.
 
-            :param connection: Is an 'irc.client.ServerConnection' object
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                The event.source contains the nickmask of the user that
-                leave the room
-                The event.target contains the channel name
+        :param event: Is an 'irc.client.Event' object
+            The event.source contains the nickmask of the user that
+            leave the room
+            The event.target contains the channel name
         """
         leaving_nick = event.source.nick
         leaving_room = event.target
         if self.bot.bot_identifier.nick == leaving_nick:
             with self._rooms_lock:
                 self.bot.callback_room_left(self._rooms[leaving_room])
-            log.info("Left room {}".format(leaving_room))
+            log.info("Left room {}.", leaving_room)
 
-    def on_endofnames(self, connection, event):
+    def on_endofnames(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            Handler of the enfofnames IRC message/event.
+        Handler of the enfofnames IRC message/event.
 
-            The endofnames message is sent to the client when the server finish
-            to send the list of names of the room ocuppants.
-            This usually happens when you join to the room.
-            So in this case, we use this event to determine that our bot is
-            finally joined to the room.
+        The endofnames message is sent to the client when the server finish
+        to send the list of names of the room ocuppants.
+        This usually happens when you join to the room.
+        So in this case, we use this event to determine that our bot is
+        finally joined to the room.
 
-            :param connection: Is an 'irc.client.ServerConnection' object
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                the event.arguments[0] contains the channel name
+        :param event: Is an 'irc.client.Event' object
+            the event.arguments[0] contains the channel name
         """
         # The event.arguments[0] contains the channel name.
         # We filter that to avoid a misfire of the event.
@@ -524,15 +580,17 @@ class IRCConnection(SingleServerIRCBot):
                 self._recently_joined_to.remove(room_name)
                 self.bot.callback_room_joined(self._rooms[room_name])
 
-    def on_join(self, connection, event):
+    def on_join(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            Handler of the join IRC message/event.
-            Is in response of a /JOIN client message.
+        Handler of the join IRC message/event.
+        Is in response of a /JOIN client message.
 
-            :param connection: Is an 'irc.client.ServerConnection' object
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                the event.target contains the channel name
+        :param event: Is an 'irc.client.Event' object
+            the event.target contains the channel name
         """
         # We can't fire the room_joined event yet,
         # because we don't have the occupants info.
@@ -543,33 +601,37 @@ class IRCConnection(SingleServerIRCBot):
                 self._rooms[room_name] = IRCRoom(room_name, self.bot)
             self._recently_joined_to.add(room_name)
 
-    def on_currenttopic(self, connection, event):
+    def on_currenttopic(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            When you Join a room with a topic set this event fires up to
-            with the topic information.
-            If the room that you join don't have a topic set, nothing happens.
-            Here is NOT the place to fire the :meth:`~errbot.backends.base.Backend.callback_room_topic` event for
-            that case exist on_topic.
+        When you Join a room with a topic set this event fires up to
+        with the topic information.
+        If the room that you join don't have a topic set, nothing happens.
+        Here is NOT the place to fire the :meth:`~errbot.backends.base.Backend.callback_room_topic` event for
+        that case exist on_topic.
 
-            :param connection: Is an 'irc.client.ServerConnection' object
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                The event.arguments[0] contains the room name
-                The event.arguments[1] contains the topic of the room.
+        :param event: Is an 'irc.client.Event' object
+            The event.arguments[0] contains the room name
+            The event.arguments[1] contains the topic of the room.
         """
         room_name, current_topic = event.arguments
         with self._rooms_lock:
             self._rooms[room_name].cb_set_topic(current_topic)
 
-    def on_topic(self, connection, event):
+    def on_topic(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            On response to the /TOPIC command if the room have a topic.
-            If the room don't have a topic the event fired is on_notopic
-            :param connection: Is an 'irc.client.ServerConnection' object
+        On response to the /TOPIC command if the room have a topic.
+        If the room don't have a topic the event fired is on_notopic
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                The event.target contains the room name.
-                The event.arguments[0] contains the topic name
+        :param event: Is an 'irc.client.Event' object
+            The event.target contains the room name.
+            The event.arguments[0] contains the topic name
         """
         room_name = event.target
         current_topic = event.arguments[0]
@@ -577,14 +639,16 @@ class IRCConnection(SingleServerIRCBot):
             self._rooms[room_name].cb_set_topic(current_topic)
             self.bot.callback_room_topic(self._rooms[room_name])
 
-    def on_notopic(self, connection, event):
+    def on_notopic(
+        self, connection: irc.client.ServerConnection, event: irc.client.Event
+    ) -> None:
         """
-            This event fires ip when there is no topic set on a room
+        This event fires ip when there is no topic set on a room
 
-            :param connection: Is an 'irc.client.ServerConnection' object
+        :param connection: Is an 'irc.client.ServerConnection' object
 
-            :param event: Is an 'irc.client.Event' object
-                The event.arguments[0] contains the room name
+        :param event: Is an 'irc.client.Event' object
+            The event.arguments[0] contains the room name
         """
         room_name = event.arguments[0]
         with self._rooms_lock:
@@ -604,18 +668,30 @@ class IRCConnection(SingleServerIRCBot):
             return
         acked = struct.unpack("!I", event.arguments[0])[0]
         if acked == stream.size:
-            log.info("File %s successfully transfered to %s" % (stream.name, stream.identifier))
+            log.info(
+                "File %s successfully transfered to %s", stream.name, stream.identifier
+            )
             dcc.disconnect()
             self.transfers.pop(dcc)
         elif acked == stream.transfered:
-            log.debug("Chunk for file %s successfully transfered to %s (%d/%d)  " %
-                      (stream.name, stream.identifier, stream.transfered, stream.size))
+            log.debug(
+                "Chunk for file %s successfully transfered to %s (%d/%d).",
+                stream.name,
+                stream.identifier,
+                stream.transfered,
+                stream.size,
+            )
             self.send_chunk(stream, dcc)
         else:
-            log.debug("Partial chunk for file %s successfully transfered to %s (%d/%d), wait for more" %
-                      (stream.name, stream.identifier, stream.transfered, stream.size))
+            log.debug(
+                "Partial chunk for file %s successfully transfered to %s (%d/%d), wait for more",
+                stream.name,
+                stream.identifier,
+                stream.transfered,
+                stream.size,
+            )
 
-    def away(self, message=""):
+    def away(self, message: Optional[str] = "") -> None:
         """
         Extend the original implementation to support AWAY.
         To set an away message, set message to something.
@@ -625,88 +701,109 @@ class IRCConnection(SingleServerIRCBot):
 
 
 class IRCBackend(ErrBot):
-    aclpattern = '{nick}!{user}@{host}'
+    aclpattern = "{nick}!{user}@{host}"
 
     def __init__(self, config):
-        if hasattr(config, 'IRC_ACL_PATTERN'):
+        if hasattr(config, "IRC_ACL_PATTERN"):
             IRCBackend.aclpattern = config.IRC_ACL_PATTERN
 
         identity = config.BOT_IDENTITY
-        nickname = identity['nickname']
-        server = identity['server']
-        port = identity.get('port', 6667)
-        password = identity.get('password', None)
-        ssl = identity.get('ssl', False)
-        bind_address = identity.get('bind_address', None)
-        ipv6 = identity.get('ipv6', False)
-        username = identity.get('username', None)
-        nickserv_password = identity.get('nickserv_password', None)
+        nickname = identity["nickname"]
+        server = identity["server"]
+        port = identity.get("port", 6667)
+        password = identity.get("password", None)
+        ssl = identity.get("ssl", False)
+        bind_address = identity.get("bind_address", None)
+        ipv6 = identity.get("ipv6", False)
+        username = identity.get("username", None)
+        nickserv_password = identity.get("nickserv_password", None)
 
-        compact = config.COMPACT_OUTPUT if hasattr(config, 'COMPACT_OUTPUT') else True
-        enable_format('irc', IRC_CHRS, borders=not compact)
+        compact = config.COMPACT_OUTPUT if hasattr(config, "COMPACT_OUTPUT") else True
+        enable_format("irc", IRC_CHRS, borders=not compact)
 
-        private_rate = getattr(config, 'IRC_PRIVATE_RATE', 1)
-        channel_rate = getattr(config, 'IRC_CHANNEL_RATE', 1)
-        reconnect_on_kick = getattr(config, 'IRC_RECONNECT_ON_KICK', 5)
-        reconnect_on_disconnect = getattr(config, 'IRC_RECONNECT_ON_DISCONNECT', 5)
+        private_rate = getattr(config, "IRC_PRIVATE_RATE", 1)
+        channel_rate = getattr(config, "IRC_CHANNEL_RATE", 1)
+        reconnect_on_kick = getattr(config, "IRC_RECONNECT_ON_KICK", 5)
+        reconnect_on_disconnect = getattr(config, "IRC_RECONNECT_ON_DISCONNECT", 5)
 
-        self.bot_identifier = IRCPerson(nickname + '!' + nickname + '@' + server)
+        self.bot_identifier = IRCPerson(nickname + "!" + nickname + "@" + server)
         super().__init__(config)
-        self.conn = IRCConnection(bot=self,
-                                  nickname=nickname,
-                                  server=server,
-                                  port=port,
-                                  ssl=ssl,
-                                  bind_address=bind_address,
-                                  ipv6=ipv6,
-                                  password=password,
-                                  username=username,
-                                  nickserv_password=nickserv_password,
-                                  private_rate=private_rate,
-                                  channel_rate=channel_rate,
-                                  reconnect_on_kick=reconnect_on_kick,
-                                  reconnect_on_disconnect=reconnect_on_disconnect,
-                                  )
+        self.conn = IRCConnection(
+            bot=self,
+            nickname=nickname,
+            server=server,
+            port=port,
+            ssl=ssl,
+            bind_address=bind_address,
+            ipv6=ipv6,
+            password=password,
+            username=username,
+            nickserv_password=nickserv_password,
+            private_rate=private_rate,
+            channel_rate=channel_rate,
+            reconnect_on_kick=reconnect_on_kick,
+            reconnect_on_disconnect=reconnect_on_disconnect,
+        )
         self.md = irc_md()
-        config.MESSAGE_SIZE_LIMIT = IRC_MESSAGE_SIZE_LIMIT
 
-    def send_message(self, mess):
-        super().send_message(mess)
-        if mess.is_direct:
+    def set_message_size_limit(self, limit: int = 510, hard_limit: int = 510) -> None:
+        """
+        IRC message size limit
+        """
+        super().set_message_size_limit(limit, hard_limit)
+
+    def send_message(self, msg: Message) -> None:
+        super().send_message(msg)
+        if msg.is_direct:
             msg_func = self.conn.send_private_message
-            msg_to = mess.to.person
+            msg_to = msg.to.person
         else:
             msg_func = self.conn.send_public_message
-            msg_to = mess.to.room
+            msg_to = msg.to.room
 
-        body = self.md.convert(mess.body)
-        for line in body.split('\n'):
+        body = self.md.convert(msg.body)
+        for line in body.split("\n"):
             msg_func(msg_to, line)
 
-    def change_presence(self, status: str = ONLINE, message: str = '') -> None:
+    def change_presence(self, status: str = ONLINE, message: str = "") -> None:
         if status == ONLINE:
             self.conn.away()  # cancels the away message
         else:
-            self.conn.away('[%s] %s' % (status, message))
+            self.conn.away(f"[{status}] {message}")
 
-    def send_stream_request(self, identifier, fsource, name=None, size=None, stream_type=None):
-        return self.conn.send_stream_request(identifier, fsource, name, size, stream_type)
+    def send_stream_request(
+        self,
+        identifier: Identifier,
+        fsource: BinaryIO,
+        name: Optional[str] = None,
+        size: Optional[int] = None,
+        stream_type: Optional[str] = None,
+    ) -> Stream:
+        return self.conn.send_stream_request(
+            identifier, fsource, name, size, stream_type
+        )
 
-    def build_reply(self, mess, text=None, private=False):
+    def build_reply(
+        self,
+        msg: Message,
+        text: Optional[str] = None,
+        private: bool = False,
+        threaded: str = False,
+    ) -> Message:
         response = self.build_message(text)
-        if mess.is_group:
+        if msg.is_group:
             if private:
                 response.frm = self.bot_identifier
-                response.to = IRCPerson(str(mess.frm))
+                response.to = IRCPerson(str(msg.frm))
             else:
-                response.frm = IRCRoomOccupant(str(self.bot_identifier), mess.frm.room)
-                response.to = mess.frm.room
+                response.frm = IRCRoomOccupant(str(self.bot_identifier), msg.frm.room)
+                response.to = msg.frm.room
         else:
             response.frm = self.bot_identifier
-            response.to = mess.frm
+            response.to = msg.frm
         return response
 
-    def serve_forever(self):
+    def serve_forever(self) -> None:
         try:
             self.conn.start()
         except KeyboardInterrupt:
@@ -718,30 +815,34 @@ class IRCBackend(ErrBot):
             log.debug("Trigger shutdown")
             self.shutdown()
 
-    def connect(self):
+    def connect(self) -> IRCConnection:
         return self.conn
 
-    def build_message(self, text):
-        text = text.replace('', '*')  # there is a weird chr IRC is sending that we need to filter out
+    def build_message(self, text: str) -> Message:
+        text = text.replace(
+            "", "*"
+        )  # there is a weird chr IRC is sending that we need to filter out
         return super().build_message(text)
 
-    def build_identifier(self, txtrep):
-        log.debug("Build identifier from [%s]" % txtrep)
+    def build_identifier(
+        self, txtrep: str
+    ) -> Union[IRCRoom, IRCRoomOccupant, IRCPerson]:
+        log.debug("Build identifier from %s.", txtrep)
         # A textual representation starting with # means that we are talking
         # about an IRC channel -- IRCRoom in internal err-speak.
-        if txtrep.startswith('#'):
+        if txtrep.startswith("#"):
             return IRCRoom(txtrep, self)
 
         # Occupants are represented as 2 lines, one is the IRC mask and the second is the Room.
-        if '\n' in txtrep:
-            m, r = txtrep.split('\n')
+        if "\n" in txtrep:
+            m, r = txtrep.split("\n")
             return IRCRoomOccupant(m, IRCRoom(r, self))
         return IRCPerson(txtrep)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         super().shutdown()
 
-    def query_room(self, room):
+    def query_room(self, room: IRCRoom) -> IRCRoom:
         """
         Query a room for information.
 
@@ -756,10 +857,10 @@ class IRCBackend(ErrBot):
             return self.conn._rooms[room]
 
     @property
-    def mode(self):
-        return 'irc'
+    def mode(self) -> str:
+        return "irc"
 
-    def rooms(self):
+    def rooms(self) -> List[IRCRoom]:
         """
         Return a list of rooms the bot is currently in.
 
@@ -769,6 +870,6 @@ class IRCBackend(ErrBot):
         with self.conn._rooms_lock:
             return self.conn._rooms.values()
 
-    def prefix_groupchat_reply(self, message, identifier):
+    def prefix_groupchat_reply(self, message: Message, identifier: Identifier):
         super().prefix_groupchat_reply(message, identifier)
-        message.body = '{0}: {1}'.format(identifier.nick, message.body)
+        message.body = f"{identifier.nick}: {message.body}"

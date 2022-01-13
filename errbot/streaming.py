@@ -1,33 +1,54 @@
-
-import os
 import io
-from threading import Thread
-from .backends.base import STREAM_WAITING_TO_START, STREAM_TRANSFER_IN_PROGRESS
 import logging
-from .utils import repeatfunc
+import os
+from itertools import repeat, starmap
+from threading import Thread
+from typing import Callable, Optional
+
+from .backends.base import STREAM_TRANSFER_IN_PROGRESS, STREAM_WAITING_TO_START
 
 CHUNK_SIZE = 4096
 
 log = logging.getLogger(__name__)
 
 
-class Tee(object):
-    """ Tee implements a multi reader / single writer """
+def repeatfunc(
+    func: Callable[..., None], times: Optional[int] = None, *args
+):  # from the itertools receipes
+    """Repeat calls to func with specified arguments.
+
+    Example:  repeatfunc(random.random)
+
+    :param args: params to the function to call.
+    :param times: number of times to repeat.
+    :param func:  the function to repeatedly call.
+    """
+    if times is None:
+        return starmap(func, repeat(args))
+    return starmap(func, repeat(args, times))
+
+
+class Tee:
+    """Tee implements a multi reader / single writer"""
+
     def __init__(self, incoming_stream, clients):
-        """ clients is a list of objects implementing callback_stream """
+        """clients is a list of objects implementing callback_stream"""
         self.incoming_stream = incoming_stream
         self.clients = clients
 
-    def start(self):
-        """ starts the transfer asynchronously """
+    def start(self) -> Thread:
+        """starts the transfer asynchronously"""
         t = Thread(target=self.run)
         t.start()
         return t
 
     def run(self):
-        """ streams to all the clients synchronously """
+        """streams to all the clients synchronously"""
         nb_clients = len(self.clients)
-        pipes = [(io.open(r, 'rb'), io.open(w, 'wb')) for r, w in repeatfunc(os.pipe, nb_clients)]
+        pipes = [
+            (io.open(r, "rb"), io.open(w, "wb"))
+            for r, w in repeatfunc(os.pipe, nb_clients)
+        ]
         streams = [self.incoming_stream.clone(pipe[0]) for pipe in pipes]
 
         def streamer(index):
@@ -35,8 +56,11 @@ class Tee(object):
                 self.clients[index].callback_stream(streams[index])
                 if streams[index].status == STREAM_WAITING_TO_START:
                     streams[index].reject()
-                    plugin = self.clients[index].__class__.__name__
-                    logging.warning("%s did not accept nor reject the incoming file transfer" % plugin)
+                    plugin = self.clients[index].name
+                    logging.warning(
+                        "%s did not accept nor reject the incoming file transfer",
+                        plugin,
+                    )
                     logging.warning("I reject it as a fallback.")
             except Exception as _:
                 # internal error, mark the error.

@@ -1,20 +1,18 @@
 import logging
 from time import sleep
-from errbot.backends.base import ONLINE
 
+from errbot.backends.base import ONLINE
 from errbot.backends.test import TestPerson
 from errbot.core import ErrBot
 
-
-# Can't use __name__ because of Yapsy
-log = logging.getLogger('errbot.backends.null')
+log = logging.getLogger(__name__)
 
 
-class ConnectionMock(object):
-    def send(self, mess):
+class ConnectionMock:
+    def send(self, msg):
         pass
 
-    def send_message(self, mess):
+    def send_message(self, msg):
         pass
 
 
@@ -24,7 +22,7 @@ class NullBackend(ErrBot):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.bot_identifier = self.build_identifier('Err')  # whatever
+        self.bot_identifier = self.build_identifier("Err")  # whatever
 
     def serve_forever(self):
         self.connect()  # be sure we are "connected" before the first command
@@ -56,10 +54,10 @@ class NullBackend(ErrBot):
             self.running = False
             super().shutdown()  # only once (hackish)
 
-    def change_presence(self, status: str = ONLINE, message: str = '') -> None:
+    def change_presence(self, status: str = ONLINE, message: str = "") -> None:
         pass
 
-    def build_reply(self, mess, text=None, private=False):
+    def build_reply(self, msg, text=None, private=False, threaded=False):
         pass
 
     def prefix_groupchat_reply(self, message, identifier):
@@ -73,4 +71,4 @@ class NullBackend(ErrBot):
 
     @property
     def mode(self):
-        return 'null'
+        return "null"

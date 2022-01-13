@@ -25,7 +25,7 @@ For example, with the Telegram backend this would be an instance of :class:`~err
 .. code-block:: python
 
 	>>> type(self._bot)
-	<class 'yapsy_loaded_plugin_Telegram_0.TelegramBackend'>
+	<class 'errbot.backends.TelegramBackend'>
 
 To find out what methods each bot backend has, you can take a look at the documentation of the various backends in the :mod:`errbot.backends` package.
 
@@ -36,7 +36,6 @@ The following table lists all the values for `mode` for the official backends:
 ============================================  ==========
 Backend                                       Mode value
 ============================================  ==========
-:class:`~errbot.backends.hipchat`             hipchat
 :class:`~errbot.backends.irc`                 irc
 :class:`~errbot.backends.slack`               slack
 :class:`~errbot.backends.telegram_messenger`  telegram
@@ -82,15 +81,14 @@ The following table lists these attributes for the official backends, along with
 ============================================  =========================  ================================================
 Backend                                       Library                    Attribute(s)
 ============================================  =========================  ================================================
-:class:`~errbot.backends.hipchat`             `sleekxmpp`_ + `hypchat`_  ``self._bot.conn`` ``self._bot.conn.hypchat``
 :class:`~errbot.backends.irc`                 `irc`_                     ``self._bot.conn`` ``self._bot.conn.connection``
 :class:`~errbot.backends.slack`               `slackclient`_             ``self._bot.sc``
 :class:`~errbot.backends.telegram_messenger`  `telegram-python-bot`_     ``self._bot.telegram``
-:class:`~errbot.backends.xmpp`                `sleekxmpp`_               ``self._bot.conn``
+:class:`~errbot.backends.xmpp`                `slixmpp`_                 ``self._bot.conn``
 ============================================  =========================  ================================================
 
 .. _hypchat: https://pypi.python.org/pypi/hypchat/
 .. _irc: https://pypi.python.org/pypi/irc/
 .. _`telegram-python-bot`: https://pypi.python.org/pypi/python-telegram-bot
 .. _slackclient: https://pypi.python.org/pypi/slackclient/
-.. _sleekxmpp: https://pypi.python.org/pypi/sleekxmpp
+.. _slixmpp: https://pypi.python.org/pypi/slixmpp

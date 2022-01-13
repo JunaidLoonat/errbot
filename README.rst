@@ -3,8 +3,9 @@
 
 |
 
-.. image:: https://img.shields.io/travis/errbotio/errbot/master.svg
-   :target: https://travis-ci.org/errbotio/errbot/
+.. image:: https://github.com/errbotio/errbot/workflows/Python%20package/badge.svg
+   :target: https://github.com/errbotio/errbot/actions
+
 
 .. image:: https://img.shields.io/pypi/v/errbot.svg
    :target: https://pypi.python.org/pypi/errbot
@@ -19,10 +20,6 @@
    :alt: Join the chat at https://gitter.im/errbotio/errbot
 
 |
-
-.. image:: https://graphs.waffle.io/errbotio/errbot/throughput.svg
-   :target: https://waffle.io/errbotio/errbot/
-   :alt: 'Throughput Graph'
 
 
 Errbot
@@ -45,23 +42,23 @@ Chat servers support
 
 **Built-in**
 
+- IRC support
 - `Slack support <https://slack.com/>`_
-- `Hipchat support <http://www.hipchat.com/>`_
 - `Telegram support <https://www.telegram.org/>`_
 - `XMPP support <http://xmpp.org>`_
-- IRC support
 
 **With add-ons**
 
-- `Gitter support <https://gitter.im/>`_ (See `instructions <https://github.com/errbotio/err-backend-gitter>`__)
-- `Skype <https://www.skype.com/>`_ (See `instructions <https://github.com/errbotio/errbot-backend-skype>`__)
-- `Discord <https://www.discordapp.com/>`_ (See `instructions <https://github.com/gbin/err-backend-discord>`__)
-- `Cisco Spark <https://www.ciscospark.com/>`_ (See `instructions <https://github.com/marksull/err-backend-cisco-spark>`__)
-- `Matrix <https://matrix.org/>`_ (See `instructions <https://github.com/SShrike/err-backend-matrix>`__)
-- `TOX <https://tox.im/>`_ (See `instructions <https://github.com/errbotio/err-backend-tox>`__)
 - `CampFire <https://campfirenow.com/>`_ (See `instructions <https://github.com/errbotio/err-backend-campfire>`__)
-- `VK <https://vk.com/>`_ (See `instructions <https://github.com/Ax3Effect/errbot-vk>`__)
+- `Webex <https://www.webex.com/>`_ (See `instructions <https://github.com/marksull/err-backend-cisco-webex-teams>`__)
+- `Discord <https://www.discordapp.com/>`_ (See `instructions <https://github.com/gbin/err-backend-discord>`__)
+- `Gitter support <https://gitter.im/>`_ (See `instructions <https://github.com/errbotio/err-backend-gitter>`__)
 - `Mattermost <https://about.mattermost.com/>`_ (See `instructions <https://github.com/Vaelor/errbot-mattermost-backend>`__)
+- `RocketChat <https://rocket.chat/>`_ (See `instructions <https://github.com/cardoso/errbot-rocketchat>`__)
+- `Skype <https://www.skype.com/>`_ (See `instructions <https://github.com/errbotio/errbot-backend-skype>`__)
+- `TOX <https://tox.im/>`_ (See `instructions <https://github.com/errbotio/err-backend-tox>`__)
+- `VK <https://vk.com/>`_ (See `instructions <https://github.com/Ax3Effect/errbot-vk>`__)
+- `Zulip <https://zulipchat.com/>`_ (See `instructions <https://github.com/zulip/errbot-backend-zulip>`__)
 
 
 Administration
@@ -85,12 +82,12 @@ Developer features
 - Webhook callbacks support
 - supports `markdown extras <https://pythonhosted.org/Markdown/extensions/extra.html>`_ formatting with tables, embedded images, links etc.
 - configuration helper to allow your plugin to be configured by chat
-- Graphical and text development/debug consoles
+- Text development/debug consoles
 - Self-documenting: your docstrings become help automatically
 - subcommands and various arg parsing options are available (re, command line type)
 - polling support: your can setup a plugin to periodically do something
 - end to end test backend
-- card rendering under Slack and Hipchat.
+- card rendering under Slack
 
 Community and support
 ---------------------
@@ -101,7 +98,6 @@ If you have:
 - a plugin development question please use `Stackoverflow <http://stackoverflow.com/questions/tagged/errbot>`_ with the tags `errbot` and `python`.
 - a bug to report or a feature request, please use our `GitHub project page <https://github.com/errbotio/errbot/issues>`_.
 
-For more general discussion and announcements, you can join us on `google plus community <https://plus.google.com/b/101905029512356212669/communities/117050256560830486288>`_.
 You can also ping us on Twitter with the hashtag ``#errbot``.
 
 
@@ -111,8 +107,7 @@ Installation
 Prerequisites
 ~~~~~~~~~~~~~
 
-Errbot runs under Python 3.3+ on Linux, Windows and Mac. For some chatting systems you'll need a key or a login for your bot to access it.
-Note: Python 2 support is still available in `errbot-4.2.x`, but it is going away.
+Errbot runs under Python 3.6+ on Linux, Windows and Mac. For some chatting systems you'll need a key or a login for your bot to access it.
 
 Quickstart
 ~~~~~~~~~~
@@ -136,7 +131,7 @@ It will show you a prompt `>>>` so you can talk to your bot directly! Try `!help
 Adding support for a chat system
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For the built-ins, just use one of those options `slack, hipchap, telegram, IRC, XMPP` with pip, you can still do it
+For the built-ins, just use one of those options `slack, telegram, IRC, XMPP` with pip, you can still do it
 after the initial installation to add the missing support for example ::
 
    $ pip install "errbot[slack]"
@@ -151,8 +146,8 @@ by `errbot --init`.
 
 To help you, we have a documented template available here: `config-template.py <https://raw.githubusercontent.com/errbotio/errbot/master/errbot/config-template.py>`_.
 
-Note: even if you changed the BACKEND from the configuration, you can still use `errbot -T` and `errbot -G` to test
-out your instance locally (in text and graphic mode respectively).
+Note: even if you changed the BACKEND from the configuration, you can still use `errbot -T` to test
+out your instance locally in text mode.
 
 Starting Errbot as a daemon
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -213,11 +208,11 @@ As an example, this is all it takes to create a "Hello, world!" plugin for Errbo
 
 .. code:: python
 
-   from errbot import BotPlugin, botcmd
-   
+    from errbot import BotPlugin, botcmd
+
     class Hello(BotPlugin):
         """Example 'Hello, world!' plugin for Errbot"""
-   
+
         @botcmd
         def hello(self, msg, args):
             """Return the phrase "Hello, world!" to you"""
@@ -225,7 +220,7 @@ As an example, this is all it takes to create a "Hello, world!" plugin for Errbo
 
 This plugin will create the command "!hello" which, when issued, returns "Hello, world!"
 to you. For more info on everything you can do with plugins, see the
-`plugin development guide <http://errbot.io/user_guide/plugin_development/>`_.
+`plugin development guide <https://errbot.io/en/latest/user_guide/plugin_development/>`_.
 
 Contribution to Errbot itself
 -----------------------------

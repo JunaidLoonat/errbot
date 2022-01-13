@@ -1,7 +1,8 @@
-import types
-from collections import MutableMapping
-from contextlib import contextmanager
 import logging
+import types
+from collections.abc import MutableMapping
+from contextlib import contextmanager
+
 log = logging.getLogger(__name__)
 
 
@@ -19,7 +20,7 @@ class StoreNotOpenError(StoreException):
 
 class StoreMixin(MutableMapping):
     """
-     This class handle the basic needs of bot plugins and core like loading, unloading and creating a storage
+    This class handle the basic needs of bot plugins and core like loading, unloading and creating a storage
     """
 
     def __init__(self):
@@ -27,26 +28,38 @@ class StoreMixin(MutableMapping):
         self.namespace = None
 
     def open_storage(self, storage_plugin, namespace):
-        if hasattr(self, 'store') and self._store is not None:
+        if self.is_open_storage():
             raise StoreAlreadyOpenError("Storage appears to be opened already")
-        log.debug("Opening storage '%s'" % namespace)
+        log.debug("Opening storage '%s'", namespace)
         self._store = storage_plugin.open(namespace)
         self.namespace = namespace
 
     def close_storage(self):
-        if not hasattr(self, '_store') or self._store is None:
-            raise StoreNotOpenError("Storage does not appear to have been opened yet")
+        if not self.is_open_storage():
+            raise StoreNotOpenError(f"Storage does not appear to have been opened yet")
         self._store.close()
         self._store = None
-        log.debug("Closed storage '%s'" % self.namespace)
+        log.debug("Closed storage '%s'", self.namespace)
+
+    def is_open_storage(self):
+        has_store_key = hasattr(self, "_store")
+        if has_store_key and self._store:
+            return True
+        elif not has_store_key or self._store is None:
+            return False
+        else:
+            return False
 
     # those are the minimal things to behave like a dictionary with the UserDict.DictMixin
     def __getitem__(self, key):
         return self._store.get(key)
 
     @contextmanager
-    def mutable(self, key):
-        obj = self._store.get(key)
+    def mutable(self, key, default=None):
+        try:
+            obj = self._store.get(key)
+        except KeyError:
+            obj = default
         yield obj
         # implements autosave for a plugin persistent entry
         # with self['foo'] as f:

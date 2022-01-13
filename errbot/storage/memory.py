@@ -6,14 +6,13 @@ ROOTS = {}  # make a little bit of an emulated persistence.
 
 
 class MemoryStorage(StorageBase):
-
     def __init__(self, namespace):
         self.namespace = namespace
         self.root = ROOTS.get(namespace, {})
 
     def get(self, key: str) -> Any:
         if key not in self.root:
-            raise KeyError("%s doesn't exist." % key)
+            raise KeyError(f"{key} doesn't exist.")
         return self.root[key]
 
     def set(self, key: str, value: Any) -> None:
@@ -21,7 +20,7 @@ class MemoryStorage(StorageBase):
 
     def remove(self, key: str):
         if key not in self.root:
-            raise KeyError("%s doesn't exist." % key)
+            raise KeyError(f"{key} doesn't exist.")
         del self.root[key]
 
     def len(self):
@@ -35,6 +34,5 @@ class MemoryStorage(StorageBase):
 
 
 class MemoryStoragePlugin(StoragePluginBase):
-
     def open(self, namespace: str) -> StorageBase:
         return MemoryStorage(namespace)

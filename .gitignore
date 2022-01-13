@@ -1,6 +1,7 @@
 *.pyc
 __pycache__
 .venv
+/.coafile
 /.idea
 /atlassian-ide-plugin.xml
 /.settings
@@ -18,6 +19,8 @@ nohup.out
 /.coverage
 /data
 /config.py.*
+/.pytest_cache
+/.mypy_cache
 
 # tools
 /tools/Home.md

@@ -36,14 +36,6 @@ with directly on the command-line. It looks like this::
     INFO:Plugin activation done.
     Talk to  me >> _
 
-If you have `PySide <https://pypi.python.org/pypi/PySide>`_
-installed, you can also run this same mode in a separate window
-using :option:`--graphic` (or :option:`-G`) instead of
-:option:`--text`. The advantage of this is that you do not have the
-bot's responses and log information mixed up together in the same
-window.
-
-
 Plugin scaffolding
 ------------------
 
@@ -53,7 +45,7 @@ containing the actual code of your plugin
 Errbot can automatically generate these files for you
 so that you do not have to write boilerplate code by hand.
 
-To create a new plugin, run `errbot --new-plugin`
+To create a new plugin, run :option:`errbot --new-plugin`
 (optionally specifying a directory where to create the new plugin -
 it will use the current directory by default).
 It will ask you a few questions such as the name for your plugin,

@@ -32,6 +32,18 @@ by setting up `BOT_IDENTITY` as follows::
     }
 
 
+Proxy setup
+-------------
+
+In case you need to use a Proxy to connect to Slack, 
+you can set the proxies with the token config.
+
+    BOT_IDENTITY = {
+        'token': 'xoxb-4426949411-aEM7...',
+        'proxies': {'http': 'some-http-proxy', 'https': 'some-https-proxy'}
+    }
+
+
 Bot admins
 ----------
 
@@ -64,3 +76,15 @@ then you can set `CHATROOM_PRESENCE` to a list of channels and groups to join.
 
     You may leave the value for `CHATROOM_FN` at its default
     as it is ignored by this backend.
+
+
+Message size limit
+------------------
+
+As of the 12th August 2018 the Slack API has a message limit size of 40,000 characters.  Messages 
+larger than 40,000 will be truncated by Slack's API.  Errbot includes the functionality to split 
+messages larger than 40,000 characters into multiple parts.  To reduce the message limit size, set the 
+`MESSAGE_SIZE_LIMIT` variable in the configuration file.  Errbot will use the smallest value between 
+the default 40,000 and `MESSAGE_SIZE_LIMIT`.
+
+#MESSAGE_SIZE_LIMIT = 1000

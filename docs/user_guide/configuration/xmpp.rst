@@ -10,7 +10,7 @@ Extra Dependencies
 
 You need to install this dependency before using Errbot with XMPP::
 
-      pip install sleekxmpp pyasn1 pyasn1-modules
+      pip install slixmpp pyasn1 pyasn1-modules
 
 Account setup
 -------------
@@ -54,6 +54,8 @@ MUC rooms
 If you want the bot to join a certain chatroom when it starts up
 then set `CHATROOM_PRESENCE` with a list of MUCs to join.
 For example: `CHATROOM_PRESENCE = ('err@conference.server.tld',)`
+
+*Note: don't omit the comma under any circumstance!*
 
 You can configure the username errbot should use in chatrooms
 by setting `CHATROOM_FN`.
